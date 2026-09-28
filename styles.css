@@ -1,0 +1,28 @@
+.flavor-summary {
+  color: var(--text-muted);
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+.flavor-item {
+  padding: 6px 8px;
+  margin-bottom: 6px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+}
+.flavor-excerpt {
+  color: var(--text-muted);
+  font-size: 12px;
+  margin-top: 2px;
+  line-height: 1.4;
+}
+.flavor-tag {
+  display: inline-block;
+  padding: 1px 6px;
+  margin: 2px 4px 0 0;
+  border-radius: 8px;
+  font-size: 11px;
+  background: var(--background-modifier-hover);
+}
+.flavor-tag-ban { color: var(--text-error); }
+.flavor-tag-tell { color: var(--text-warning); }
+.flavor-tag-verb { color: var(--text-muted); }
