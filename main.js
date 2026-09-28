@@ -7,6 +7,12 @@ const { Plugin, ItemView, Notice, WorkspaceLeaf, PluginSettingTab, Setting } = r
 
 const VIEW_TYPE = "ai-flavor-checker-view";
 
+const DEFAULT_SETTINGS = {
+  extraWords: "",
+  heavyThreshold: 4,
+  mediumThreshold: 2,
+};
+
 // ---------- 词表（与 flavor_metrics.py 保持同步，改词表改这里） ----------
 const BAN_PATTERNS = [
   "顿时", "立刻", "连忙", "显然", "似乎", "几乎", "可能", "渐渐", "更是", "一定", "或许",
@@ -27,9 +33,12 @@ const AI_VERB = ["了起来", "了下来", "了下去", "了上去", "了过去"
 const LONG_PATTERNS = BAN_PATTERNS.concat(EMOTION_TELL, AI_VERB).sort((a, b) => b.length - a.length);
 
 /** 扫描一段文本，返回 [{word, kind}] */
-function hitsIn(text) {
+function hitsIn(text, lists) {
+  const all = lists
+    ? lists.BAN_PATTERNS.concat(lists.EMOTION_TELL, lists.AI_VERB, lists.extra).sort((a, b) => b.length - a.length)
+    : LONG_PATTERNS;
   const hits = [];
-  for (const w of LONG_PATTERNS) {
+  for (const w of all) {
     const kind = BAN_PATTERNS.includes(w) ? "ban" : EMOTION_TELL.includes(w) ? "tell" : "verb";
     let idx = text.indexOf(w);
     while (idx >= 0) {
@@ -40,9 +49,9 @@ function hitsIn(text) {
   return hits;
 }
 
-function levelOf(n) {
-  if (n >= 4) return { emoji: "🔴", name: "重度", color: "var(--text-error)" };
-  if (n >= 2) return { emoji: "🟡", name: "中度", color: "var(--text-warning)" };
+function levelOf(n, heavy, medium) {
+  if (n >= heavy) return { emoji: "🔴", name: "重度", color: "var(--text-error)" };
+  if (n >= medium) return { emoji: "🟡", name: "中度", color: "var(--text-warning)" };
   return { emoji: "🟣", name: "轻度", color: "var(--text-muted)" };
 }
 
@@ -51,6 +60,7 @@ const KIND_LABEL = { ban: "句式禁词", tell: "情绪直述", verb: "AI补全�
 // ---------- 插件主体 ----------
 module.exports = class AiFlavorChecker extends Plugin {
   async onload() {
+    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
     this.addRibbonIcon("traffic-cone", "AI 味红绿灯：检测当前笔记", () => this.checkActiveNote());
 
     this.addCommand({
@@ -60,6 +70,17 @@ module.exports = class AiFlavorChecker extends Plugin {
     });
 
     this.registerView(VIEW_TYPE, (leaf) => new FlavorView(leaf, this));
+
+    this.addSettingTab(new FlavorSettingTab(this.app, this));
+  }
+
+  async saveSettings() { await this.saveData(this.settings); }
+
+  /** 内置词表 + 用户自定义补充词 */
+  wordLists() {
+    const extra = this.settings.extraWords
+      .split(/[,，\s]+/).map((s) => s.trim()).filter(Boolean);
+    return { BAN_PATTERNS, EMOTION_TELL, AI_VERB, extra };
   }
 
   onunload() {
@@ -74,12 +95,13 @@ module.exports = class AiFlavorChecker extends Plugin {
     }
     const editor = view.editor;
     const text = editor.getValue();
+    const lists = this.wordLists();
     const paragraphs = [];
     for (let i = 0; i < text.split("\n").length; i++) {
       const line = editor.getLine(i);
       const trimmed = line.trim();
       if (trimmed.length < 10 || trimmed.startsWith("#")) continue;
-      const hits = hitsIn(trimmed);
+      const hits = hitsIn(trimmed, lists);
       if (hits.length) paragraphs.push({ line: i, text: trimmed, hits });
     }
 
@@ -124,7 +146,7 @@ class FlavorView extends ItemView {
     paragraphs.sort((a, b) => b.hits.length - a.hits.length);
 
     for (const p of paragraphs) {
-      const lv = levelOf(p.hits.length);
+      const lv = levelOf(p.hits.length, this.plugin.settings.heavyThreshold, this.plugin.settings.mediumThreshold);
       const item = contentEl.createDiv("flavor-item");
       const head = item.createDiv("flavor-item-head");
       head.createEl("span", { text: `${lv.emoji} 行${p.line + 1} · ${p.hits.length} 处` });
@@ -150,5 +172,26 @@ class FlavorView extends ItemView {
       }
       words.style.marginTop = "4px";
     }
+  }
+}
+
+class FlavorSettingTab extends PluginSettingTab {
+  constructor(app, plugin) { super(app, plugin); this.plugin = plugin; }
+  display() {
+    const { containerEl } = this;
+    containerEl.empty();
+    new Setting(containerEl).setName("自定义补充词")
+      .setDesc("逗号或空格分隔，作为句式禁词计入").addTextArea((t) =>
+      t.setValue(this.plugin.settings.extraWords).onChange(async (v) => {
+        this.plugin.settings.extraWords = v; await this.plugin.saveSettings();
+      }));
+    new Setting(containerEl).setName("🔴 重度阈值").setDesc("单段命中达到该数标红（默认 4）").addText((t) =>
+      t.setValue(String(this.plugin.settings.heavyThreshold)).onChange(async (v) => {
+        this.plugin.settings.heavyThreshold = parseInt(v) || 4; await this.plugin.saveSettings();
+      }));
+    new Setting(containerEl).setName("🟡 中度阈值").setDesc("单段命中达到该数标黄（默认 2）").addText((t) =>
+      t.setValue(String(this.plugin.settings.mediumThreshold)).onChange(async (v) => {
+        this.plugin.settings.mediumThreshold = parseInt(v) || 2; await this.plugin.saveSettings();
+      }));
   }
 }

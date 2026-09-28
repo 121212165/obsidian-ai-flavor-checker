@@ -1,7 +1,7 @@
 {
   "id": "ai-flavor-checker",
   "name": "AI Flavor Checker",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "minAppVersion": "1.4.0",
   "description": "Three-level AI-flavor scan for prose drafts: flags stock phrases, directly told emotions and AI-style verb patterns, with click-to-jump results.",
   "author": "121212165",
