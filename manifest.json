@@ -3,7 +3,7 @@
   "name": "AI Flavor Checker",
   "version": "0.1.1",
   "minAppVersion": "1.4.0",
-  "description": "Three-level AI-flavor scan for prose drafts: flags stock phrases, directly told emotions and AI-style verb patterns, with click-to-jump results.",
+  "description": "AI-flavor scan with configurable word-list presets (fiction / general Chinese) and vault-based custom lists: flags stock phrases, told emotions and AI-style verbs, click-to-jump.",
   "author": "121212165",
   "isDesktopOnly": true
 }

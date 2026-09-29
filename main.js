@@ -11,7 +11,23 @@ const DEFAULT_SETTINGS = {
   extraWords: "",
   heavyThreshold: 4,
   mediumThreshold: 2,
+  preset: "fiction", // fiction=网文全量词表 / generic=通用中文（任何领域）
+  configNote: "", // vault 内配置笔记路径：```flavor JSON 覆盖/扩充词表
 };
+
+// 通用中文 AI 味词（跨领域：公文/自媒体/翻译腔都适用的高频 AI 词）
+const GENERIC_BAN = [
+  "顿时", "立刻", "显然", "几乎", "可能", "渐渐", "更是", "一定", "或许",
+  "这一刻", "一时之间", "仿佛", "像是", "如同", "深吸一口气", "缓缓地说",
+  "的确", "确实", "简直", "甚至", "以及", "充满", "一股", "一抹", "一丝",
+  "意识到", "感觉到", "注意到", "浮现", "涌上", "值得注意的是", "总的来说",
+  "综上所述", "众所周知", "不难发现", "毋庸置疑", "赋能", "抓手", "闭环",
+  "沉淀", "对齐", "颗粒度", "底层逻辑", "心智", "拉通", "打法",
+];
+const GENERIC_TELL = [
+  "美好", "温暖", "震撼", "惊艳", "绝绝子", "yyds", "无敌", "超棒", "完美",
+  "非常", "特别", "极其", "异常", "无比", "相当",
+];
 
 // ---------- 词表（与 flavor_metrics.py 保持同步，改词表改这里） ----------
 const BAN_PATTERNS = [
@@ -76,11 +92,38 @@ module.exports = class AiFlavorChecker extends Plugin {
 
   async saveSettings() { await this.saveData(this.settings); }
 
-  /** 内置词表 + 用户自定义补充词 */
-  wordLists() {
+  /** 词表：内置（网文全量/通用精简）+ 设置补充词 + vault 配置笔记覆盖 */
+  async wordListsAsync() {
+    const useGeneric = this.settings.preset === "generic";
+    const ban = useGeneric ? GENERIC_BAN.slice() : BAN_PATTERNS.slice();
+    const tell = useGeneric ? GENERIC_TELL.slice() : EMOTION_TELL.slice();
+    const verb = useGeneric ? [] : AI_VERB.slice();
     const extra = this.settings.extraWords
       .split(/[,，\s]+/).map((s) => s.trim()).filter(Boolean);
-    return { BAN_PATTERNS, EMOTION_TELL, AI_VERB, extra };
+    ban.push(...extra);
+    // 配置笔记：```flavor 代码块 JSON：{"ban":[],"tell":[],"verb":[],"extra":[]}
+    if (this.settings.configNote) {
+      try {
+        const f = this.app.vault.getAbstractFileByPath(this.settings.configNote);
+        if (f) {
+          const raw = await this.app.vault.read(f);
+          const m = raw.match(/```flavor\s*\n([\s\S]*?)```/) || raw.match(/```json\s*\n([\s\S]*?)```/);
+          if (m) {
+            const cfg = JSON.parse(m[1]);
+            if (Array.isArray(cfg.ban)) ban.push(...cfg.ban.map(String));
+            if (Array.isArray(cfg.tell)) tell.push(...cfg.tell.map(String));
+            if (Array.isArray(cfg.verb)) verb.push(...cfg.verb.map(String));
+            if (Array.isArray(cfg.extra)) ban.push(...cfg.extra.map(String));
+            if (cfg.replace === true) { // 全量替换模式
+              if (Array.isArray(cfg.ban)) ban.splice(0, ban.length, ...cfg.ban.map(String));
+              if (Array.isArray(cfg.tell)) tell.splice(0, tell.length, ...cfg.tell.map(String));
+              if (Array.isArray(cfg.verb)) verb.splice(0, verb.length, ...cfg.verb.map(String));
+            }
+          }
+        }
+      } catch (e) { console.error("flavor config note:", e); }
+    }
+    return { BAN_PATTERNS: ban, EMOTION_TELL: tell, AI_VERB: verb, extra: [] };
   }
 
   onunload() {
@@ -95,7 +138,7 @@ module.exports = class AiFlavorChecker extends Plugin {
     }
     const editor = view.editor;
     const text = editor.getValue();
-    const lists = this.wordLists();
+    const lists = await this.wordListsAsync();
     const paragraphs = [];
     for (let i = 0; i < text.split("\n").length; i++) {
       const line = editor.getLine(i);
@@ -180,6 +223,20 @@ class FlavorSettingTab extends PluginSettingTab {
   display() {
     const { containerEl } = this;
     containerEl.empty();
+    new Setting(containerEl).setName("词表预设")
+      .setDesc("网文小说=全量 Fiction 词表；通用中文=跨领域 AI 高频词（公文/自媒体/翻译腔）")
+      .addDropdown((d) => {
+        d.addOption("fiction", "网文小说（默认）");
+        d.addOption("generic", "通用中文");
+        d.setValue(this.plugin.settings.preset || "fiction");
+        d.onChange(async (v) => { this.plugin.settings.preset = v; await this.plugin.saveSettings(); });
+      });
+    new Setting(containerEl).setName("配置笔记路径")
+      .setDesc("可选。vault 内一篇笔记，用 ```flavor 代码块写 JSON 覆盖词表：{\"ban\":[…],\"tell\":[…],\"verb\":[…],\"replace\":false}。换领域不改插件，改笔记即可")
+      .addText((t) =>
+        t.setValue(this.plugin.settings.configNote || "").onChange(async (v) => {
+          this.plugin.settings.configNote = v.trim(); await this.plugin.saveSettings();
+        }));
     new Setting(containerEl).setName("自定义补充词")
       .setDesc("逗号或空格分隔，作为句式禁词计入").addTextArea((t) =>
       t.setValue(this.plugin.settings.extraWords).onChange(async (v) => {
