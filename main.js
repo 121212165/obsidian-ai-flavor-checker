@@ -29,6 +29,17 @@ const GENERIC_TELL = [
   "非常", "特别", "极其", "异常", "无比", "相当",
 ];
 
+// 自媒体文案 AI 腔（公众号/小红书/短视频口播常见套话）
+const MEDIA_BAN = [
+  "绝绝子", "yyds", "谁懂啊", "家人们", "宝子们", "冲鸭", "拿捏", "天花板",
+  "干货满满", "无脑冲", "闭眼入", "狠狠", "纯纯", "直接封神", "跪谢",
+  "码住", "马住", "必看", "亲测", "良心", "宝藏", "小破站", "集美",
+];
+const MEDIA_TELL = [
+  "真的绝了", "狠狠爱住", "被治愈了", "瞬间破防", "DNA动了", "直接封神",
+  "不允许还有人不知道", "听我的", "别问了", "问就是",
+];
+
 // ---------- 词表（与 flavor_metrics.py 保持同步，改词表改这里） ----------
 const BAN_PATTERNS = [
   "顿时", "立刻", "连忙", "显然", "似乎", "几乎", "可能", "渐渐", "更是", "一定", "或许",
@@ -94,10 +105,10 @@ module.exports = class AiFlavorChecker extends Plugin {
 
   /** 词表：内置（网文全量/通用精简）+ 设置补充词 + vault 配置笔记覆盖 */
   async wordListsAsync() {
-    const useGeneric = this.settings.preset === "generic";
-    const ban = useGeneric ? GENERIC_BAN.slice() : BAN_PATTERNS.slice();
-    const tell = useGeneric ? GENERIC_TELL.slice() : EMOTION_TELL.slice();
-    const verb = useGeneric ? [] : AI_VERB.slice();
+    const preset = this.settings.preset;
+    const ban = (preset === "generic" ? GENERIC_BAN : preset === "media" ? MEDIA_BAN : BAN_PATTERNS).slice();
+    const tell = (preset === "generic" ? GENERIC_TELL : preset === "media" ? MEDIA_TELL : EMOTION_TELL).slice();
+    const verb = preset === "fiction" ? AI_VERB.slice() : [];
     const extra = this.settings.extraWords
       .split(/[,，\s]+/).map((s) => s.trim()).filter(Boolean);
     ban.push(...extra);
@@ -228,6 +239,7 @@ class FlavorSettingTab extends PluginSettingTab {
       .addDropdown((d) => {
         d.addOption("fiction", "网文小说（默认）");
         d.addOption("generic", "通用中文");
+        d.addOption("media", "自媒体文案（公众号/小红书/口播）");
         d.setValue(this.plugin.settings.preset || "fiction");
         d.onChange(async (v) => { this.plugin.settings.preset = v; await this.plugin.saveSettings(); });
       });
